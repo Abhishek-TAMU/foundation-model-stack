@@ -236,7 +236,8 @@ def get_model(
                 See `serialization.list_sources(architecture)`
     group: ProcessGroup The PG to use for any model distribution
     """
-    rank, world_size = distributed.rank_and_world(group)
+    # rank, world_size = distributed.rank_and_world(group)
+    rank, world_size = 0, 1
     local_rank = distributed.local_rank()
 
     if distributed_strategy is None or distributed_strategy == "":
