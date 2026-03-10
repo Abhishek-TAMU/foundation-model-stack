@@ -19,6 +19,7 @@ def pad_input_ids(
     is_causal_mask=True,
     padding_side="left",
     position_ids_offset=0,
+    pad_token_id: int = 0,  # ← CHANGE #1: Add parameter
 ) -> Tuple[torch.Tensor, MutableMapping[str, Any]]:
     """
     Convert a list of Tensors to a rectangular tensor. Return extra padding kwargs for the position_ids and mask, since
@@ -34,6 +35,8 @@ def pad_input_ids(
     position_ids_offset: int
         some models are trained with position_ids that do not start at 0 but at pad_id + 1. The default parameter
         here will work for most models, but for example MPNet requires passing a real pad_id.
+    pad_token_id: int
+        the token ID to use for padding. Default is 0.
 
     Returns
     -------
@@ -49,25 +52,45 @@ def pad_input_ids(
     position_ids_list = []
     for input_ids_i in input_ids_list:
         seq_len = input_ids_i.size(0)
-        pads = torch.zeros(
-            max_len - seq_len, dtype=torch.long, device=input_ids_i.device
+        
+        # ← CHANGE #2: Use pad_token_id instead of zeros
+        pads = torch.full(
+            (max_len - seq_len,),
+            fill_value=pad_token_id,
+            dtype=torch.long,
+            device=input_ids_i.device
         )
+        
         non_pads = torch.ones(seq_len, dtype=torch.bool, device=input_ids_i.device)
 
         # Setting this to 0, however if 0 is the eos, we will end up truncating the output if using truncate_after_eos
         # once this workflow works for nested tensor, this can probably be removed
 
-        pos_ids_pads = pads
+        # ← CHANGE #3: Create separate zero tensor for position IDs
+        pos_ids_pads = torch.zeros(
+            max_len - seq_len,
+            dtype=torch.long,
+            device=input_ids_i.device
+        )
+        
         pos_ids_seq = torch.arange(
             0, seq_len, dtype=torch.long, device=input_ids_i.device
         )
+        
+        # ← CHANGE #4: Create explicit padding mask
+        pad_mask = torch.zeros(
+            max_len - seq_len,
+            dtype=torch.bool,
+            device=input_ids_i.device
+        )
+        
         if padding_side == "left":
             padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
-            mask_list.append(torch.cat((pads.bool(), non_pads)))
+            mask_list.append(torch.cat((pad_mask, non_pads)))  # ← Use pad_mask
             position_ids_list.append(torch.cat((pos_ids_pads, pos_ids_seq)))
         elif padding_side == "right":
             padded_input_ids_list.append(torch.cat((input_ids_i, pads)))
-            mask_list.append(torch.cat((non_pads, pads.bool())))
+            mask_list.append(torch.cat((non_pads, pad_mask)))  # ← Use pad_mask
             position_ids_list.append(torch.cat((pos_ids_seq, pos_ids_pads)))
         else:
             raise NotImplementedError("padding_side must be 'right' or left'")
